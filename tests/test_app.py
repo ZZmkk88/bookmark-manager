@@ -465,3 +465,8 @@ def test_search_escapes_like_wildcards(client, auth):
     # a backslash in the query matches a literal backslash (here: in notes)
     assert client.get("/api/bookmarks", params={"q": "\\"}, headers=auth).json()["total"] == 1
 
+
+
+def test_docs_not_public(client):
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert client.get(path).status_code == 404, path

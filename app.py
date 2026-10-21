@@ -41,7 +41,14 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="bookmark-manager", lifespan=lifespan)
+app = FastAPI(
+    title="bookmark-manager",
+    lifespan=lifespan,
+    # the API docs pages are not exposed: this is a private single-user app
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
 
 # ---------------------------------------------------------------------------
