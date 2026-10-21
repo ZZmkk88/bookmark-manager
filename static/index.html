@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>书签管理器 · bookmark-manager</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f6f8; color: #222; }
+  header { background: #2b3a4a; color: #fff; padding: 10px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 17px; margin: 0; }
+  header .spacer { flex: 1; }
+  header button, header label.btn { background: #3f5871; color: #fff; border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+  header button:hover, header label.btn:hover { background: #4d6a87; }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+  .card { background: #fff; border-radius: 10px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .card h2 { font-size: 15px; margin: 0 0 12px; }
+  label.f { display: block; font-size: 13px; color: #555; margin: 10px 0 4px; }
+  input[type=text], input[type=password], input[type=url], textarea { width: 100%; padding: 8px 10px; border: 1px solid #ccd; border-radius: 6px; font-size: 14px; background: #fff; }
+  textarea { min-height: 54px; resize: vertical; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row > * { flex: 0 0 auto; }
+  .grow { flex: 1 1 auto !important; }
+  button.primary { background: #1f7aec; color: #fff; border: 0; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; }
+  button.primary:hover { background: #1666cc; }
+  button.ghost { background: #eef1f4; border: 1px solid #d4dae0; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 13px; }
+  button.ghost:hover { background: #e2e8ee; }
+  button.danger { color: #b00020; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .toolbar input[type=text] { flex: 1 1 200px; }
+  .chips { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { background: #eef4fb; color: #1666cc; border: 1px solid #c9ddf5; border-radius: 999px; padding: 3px 10px; font-size: 12.5px; cursor: pointer; }
+  .chip.active { background: #1f7aec; color: #fff; }
+  .bm { border-top: 1px solid #eee; padding: 12px 2px; }
+  .bm:first-of-type { border-top: 0; }
+  .bm .title { font-size: 15.5px; font-weight: 600; }
+  .bm .title a { color: #14508f; text-decoration: none; }
+  .bm .title a:hover { text-decoration: underline; }
+  .bm .url { font-size: 12.5px; color: #7a8699; word-break: break-all; }
+  .bm .desc { font-size: 13.5px; color: #444; margin-top: 4px; white-space: pre-wrap; }
+  .bm .meta { font-size: 12px; color: #98a2b3; margin-top: 5px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .bm .tag { background: #f0f0f5; border-radius: 4px; padding: 1px 7px; cursor: pointer; color: #555; }
+  .bm .tag:hover { background: #e2e2ee; }
+  .badge { background: #ff9800; color: #fff; border-radius: 4px; padding: 1px 6px; font-size: 11px; }
+  .badge.grey { background: #9aa5b1; }
+  .msg { font-size: 13.5px; margin: 8px 0; min-height: 18px; }
+  .msg.err { color: #b00020; }
+  .msg.ok { color: #1c7c34; }
+  .center { max-width: 380px; margin: 60px auto; }
+  .hidden { display: none !important; }
+  .small { font-size: 12.5px; color: #778; }
+  @media (max-width: 600px) { main { padding: 10px; } }
+</style>
+</head>
+<body>
+
+<!-- 登录 -->
+<div id="loginView" class="center card hidden">
+  <h2>登录书签管理器</h2>
+  <label class="f">用户名</label>
+  <input type="text" id="loginUser" autocomplete="username">
+  <label class="f">密码</label>
+  <input type="password" id="loginPass" autocomplete="current-password">
+  <div class="msg err" id="loginMsg"></div>
+  <button class="primary" id="loginBtn" style="width:100%">登录</button>
+  <p class="small">首次使用默认账号 admin / admin123，登录后会要求改密码。</p>
+</div>
+
+<!-- 强制改密 -->
+<div id="changeView" class="center card hidden">
+  <h2>首次登录，请先修改密码</h2>
+  <label class="f">旧密码</label>
+  <input type="password" id="oldPass" autocomplete="current-password">
+  <label class="f">新密码（至少 6 位）</label>
+  <input type="password" id="newPass" autocomplete="new-password">
+  <div class="msg err" id="changeMsg"></div>
+  <button class="primary" id="changeBtn" style="width:100%">修改密码</button>
+</div>
+
+<!-- 主界面 -->
+<div id="appView" class="hidden">
+  <header>
+    <h1>🔖 书签管理器</h1>
+    <span class="small" id="whoami" style="color:#c8d4e0"></span>
+    <div class="spacer"></div>
+    <label class="btn">导入书签文件<input type="file" id="importFile" accept=".html,.htm" class="hidden"></label>
+    <button id="exportBtn">导出</button>
+    <button id="logoutBtn">退出登录</button>
+  </header>
+  <main>
+    <div class="card">
+      <h2 id="formTitle">添加书签</h2>
+      <label class="f">网址 *</label>
+      <div class="row">
+        <input type="url" id="fUrl" class="grow" placeholder="https://example.com/文章">
+        <button class="ghost" id="fetchBtn">自动抓取标题/描述</button>
+      </div>
+      <label class="f">标题</label>
+      <input type="text" id="fTitle" placeholder="留空则保存时自动抓取">
+      <label class="f">描述</label>
+      <textarea id="fDesc"></textarea>
+      <label class="f">标签（英文逗号分隔）</label>
+      <input type="text" id="fTags" placeholder="如：编程, 教程, 待读">
+      <label class="f">备注</label>
+      <textarea id="fNotes"></textarea>
+      <div class="row" style="margin-top:10px">
+        <label><input type="checkbox" id="fUnread"> 稍后读</label>
+        <button class="primary" id="saveBtn">保存书签</button>
+        <button class="ghost hidden" id="cancelEditBtn">取消编辑</button>
+      </div>
+      <div class="msg" id="formMsg"></div>
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <input type="text" id="searchInput" placeholder="搜索标题 / 网址 / 描述 / 标签…">
+        <button class="ghost" id="searchBtn">搜索</button>
+        <label><input type="checkbox" id="unreadOnly"> 只看稍后读</label>
+        <label><input type="checkbox" id="showArchived"> 看归档区</label>
+      </div>
+      <div class="chips" id="tagChips"></div>
+      <div class="msg" id="listMsg"></div>
+      <div id="list"></div>
+    </div>
+  </main>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let token = localStorage.getItem("bm_token") || "";
+let activeTag = "";
+let editingId = null;
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token, ...(opts.headers || {}) },
+  });
+  if (res.status === 401 && token) { logout(); throw new Error("登录已过期"); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || ("请求失败 " + res.status));
+  return data;
+}
+
+function show(view) {
+  ["loginView", "changeView", "appView"].forEach(v => $(v).classList.add("hidden"));
+  $(view).classList.remove("hidden");
+}
+
+function logout() {
+  token = "";
+  localStorage.removeItem("bm_token");
+  show("loginView");
+}
+
+async function boot() {
+  if (!token) { show("loginView"); return; }
+  try {
+    const me = await api("/api/me");
+    $("whoami").textContent = "当前用户：" + me.username;
+    if (me.must_change_password) { show("changeView"); return; }
+    show("appView");
+    refresh();
+  } catch (e) { show("loginView"); }
+}
+
+$("loginBtn").onclick = async () => {
+  $("loginMsg").textContent = "";
+  try {
+    const res = await fetch("/api/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: $("loginUser").value, password: $("loginPass").value }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "登录失败");
+    token = data.token;
+    localStorage.setItem("bm_token", token);
+    boot();
+  } catch (e) { $("loginMsg").textContent = e.message; }
+};
+
+$("changeBtn").onclick = async () => {
+  $("changeMsg").textContent = "";
+  try {
+    await api("/api/change-password", {
+      method: "POST",
+      body: JSON.stringify({ old_password: $("oldPass").value, new_password: $("newPass").value }),
+    });
+    boot();
+  } catch (e) { $("changeMsg").textContent = e.message; }
+};
+
+$("logoutBtn").onclick = async () => { try { await api("/api/logout", { method: "POST" }); } catch (e) {} logout(); };
+
+$("fetchBtn").onclick = async () => {
+  const url = $("fUrl").value.trim();
+  if (!url) { setFormMsg("先填网址", true); return; }
+  setFormMsg("正在抓取…");
+  try {
+    const meta = await api("/api/fetch-metadata", { method: "POST", body: JSON.stringify({ url }) });
+    if (meta.title) $("fTitle").value = meta.title;
+    if (meta.description) $("fDesc").value = meta.description;
+    setFormMsg(meta.title || meta.description ? "抓取成功，可继续修改后保存" : "没抓到标题/描述，可以手填", !(meta.title || meta.description));
+  } catch (e) { setFormMsg(e.message, true); }
+};
+
+function setFormMsg(text, isErr) {
+  const el = $("formMsg");
+  el.textContent = text;
+  el.className = "msg " + (isErr ? "err" : "ok");
+}
+
+function resetForm() {
+  editingId = null;
+  ["fUrl", "fTitle", "fDesc", "fTags", "fNotes"].forEach(id => $(id).value = "");
+  $("fUnread").checked = false;
+  $("formTitle").textContent = "添加书签";
+  $("cancelEditBtn").classList.add("hidden");
+}
+
+$("cancelEditBtn").onclick = resetForm;
+
+$("saveBtn").onclick = async () => {
+  const payload = {
+    url: $("fUrl").value.trim(),
+    title: $("fTitle").value,
+    description: $("fDesc").value,
+    notes: $("fNotes").value,
+    tags: $("fTags").value,
+    unread: $("fUnread").checked,
+  };
+  if (!payload.url) { setFormMsg("网址必填", true); return; }
+  try {
+    if (editingId) {
+      await api("/api/bookmarks/" + editingId, { method: "PUT", body: JSON.stringify(payload) });
+      setFormMsg("已更新");
+    } else {
+      await api("/api/bookmarks", { method: "POST", body: JSON.stringify(payload) });
+      setFormMsg("已保存");
+    }
+    resetForm();
+    refresh();
+  } catch (e) { setFormMsg(e.message, true); }
+};
+</script>
+<script>
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+async function refresh() {
+  await loadTags();
+  await loadList();
+}
+
+async function loadTags() {
+  try {
+    const data = await api("/api/tags");
+    const box = $("tagChips");
+    box.innerHTML = "";
+    data.tags.filter(t => t.count > 0).forEach(t => {
+      const chip = document.createElement("span");
+      chip.className = "chip" + (activeTag === t.name ? " active" : "");
+      chip.textContent = t.name + " (" + t.count + ")";
+      chip.onclick = () => { activeTag = activeTag === t.name ? "" : t.name; refresh(); };
+      box.appendChild(chip);
+    });
+  } catch (e) { /* 标签加载失败不阻塞列表 */ }
+}
+
+async function loadList() {
+  const params = new URLSearchParams();
+  const q = $("searchInput").value.trim();
+  if (q) params.set("q", q);
+  if (activeTag) params.set("tag", activeTag);
+  params.set("archived", $("showArchived").checked ? "1" : "0");
+  if ($("unreadOnly").checked) params.set("unread", "1");
+  try {
+    const data = await api("/api/bookmarks?" + params.toString());
+    $("listMsg").textContent = "共 " + data.total + " 条" + (activeTag ? "（标签：" + activeTag + "）" : "");
+    $("listMsg").className = "msg";
+    const list = $("list");
+    list.innerHTML = "";
+    if (!data.bookmarks.length) {
+      list.innerHTML = '<p class="small">暂无书签。</p>';
+      return;
+    }
+    data.bookmarks.forEach(bm => list.appendChild(renderBookmark(bm)));
+  } catch (e) {
+    $("listMsg").textContent = e.message;
+    $("listMsg").className = "msg err";
+  }
+}
+
+function renderBookmark(bm) {
+  const div = document.createElement("div");
+  div.className = "bm";
+  const tagsHtml = bm.tags.map(t => '<span class="tag" data-tag="' + esc(t) + '">' + esc(t) + "</span>").join(" ");
+  div.innerHTML =
+    '<div class="title"><a href="' + esc(bm.url) + '" target="_blank" rel="noopener">' + esc(bm.title || bm.url) + "</a> " +
+    (bm.unread ? '<span class="badge">稍后读</span>' : "") +
+    (bm.is_archived ? '<span class="badge grey">已归档</span>' : "") + "</div>" +
+    '<div class="url">' + esc(bm.url) + "</div>" +
+    (bm.description ? '<div class="desc">' + esc(bm.description) + "</div>" : "") +
+    (bm.notes ? '<div class="desc">📝 ' + esc(bm.notes) + "</div>" : "") +
+    '<div class="meta"><span>' + esc((bm.date_added || "").slice(0, 10)) + "</span>" + tagsHtml +
+    '<span style="flex:1"></span>' +
+    '<button class="ghost" data-act="edit">编辑</button>' +
+    '<button class="ghost" data-act="read">' + (bm.unread ? "标为已读" : "稍后读") + "</button>" +
+    '<button class="ghost" data-act="archive">' + (bm.is_archived ? "取消归档" : "归档") + "</button>" +
+    '<button class="ghost danger" data-act="del">删除</button></div>';
+  div.querySelectorAll(".tag").forEach(el => el.onclick = () => { activeTag = el.dataset.tag; refresh(); });
+  div.querySelector('[data-act="edit"]').onclick = () => startEdit(bm);
+  div.querySelector('[data-act="read"]').onclick = () => updateBm(bm.id, { unread: !bm.unread });
+  div.querySelector('[data-act="archive"]').onclick = () => updateBm(bm.id, { is_archived: !bm.is_archived });
+  div.querySelector('[data-act="del"]').onclick = async () => {
+    if (!confirm("确定删除这条书签？")) return;
+    try { await api("/api/bookmarks/" + bm.id, { method: "DELETE" }); refresh(); }
+    catch (e) { alert(e.message); }
+  };
+  return div;
+}
+
+async function updateBm(id, patch) {
+  try { await api("/api/bookmarks/" + id, { method: "PUT", body: JSON.stringify(patch) }); refresh(); }
+  catch (e) { alert(e.message); }
+}
+
+function startEdit(bm) {
+  editingId = bm.id;
+  $("fUrl").value = bm.url;
+  $("fTitle").value = bm.title;
+  $("fDesc").value = bm.description;
+  $("fTags").value = bm.tags.join(", ");
+  $("fNotes").value = bm.notes;
+  $("fUnread").checked = bm.unread;
+  $("formTitle").textContent = "编辑书签 #" + bm.id;
+  $("cancelEditBtn").classList.remove("hidden");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+$("searchBtn").onclick = loadList;
+$("searchInput").addEventListener("keydown", e => { if (e.key === "Enter") loadList(); });
+$("unreadOnly").onchange = loadList;
+$("showArchived").onchange = loadList;
+
+$("importFile").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const res = await fetch("/api/import", { method: "POST", headers: { "Authorization": "Bearer " + token }, body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "导入失败");
+    alert("导入完成：共 " + data.total + " 条，成功 " + data.success + " 条，失败/跳过 " + data.failed + " 条");
+    refresh();
+  } catch (err) { alert(err.message); }
+  e.target.value = "";
+});
+
+$("exportBtn").onclick = async () => {
+  try {
+    const res = await fetch("/api/export", { headers: { "Authorization": "Bearer " + token } });
+    if (!res.ok) throw new Error("导出失败");
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "bookmarks.html";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) { alert(e.message); }
+};
+
+boot();
+</script>
+</body>
+</html>
