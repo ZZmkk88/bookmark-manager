@@ -43,6 +43,40 @@
 - **P2 十条**：分支未动；main 已在 18:06–18:17 按用户拍板全修完，
   **无需处理**。
 
+## 2026-10-21：TASK-019 复核（head 3a088172cb3）——分支唯一代码改动已在 main，无合并；P2 逐项处置
+
+- **基座**：分支基准为旧 main（其自带测试 29 项），本轮改动只有
+  `static/index.html` 的 loadAll()→refresh() 一处（changed.txt 已核验，
+  测试文件未动）。
+- **P0-1（skipChangeBtn 调不存在的 loadAll()）**：改法与我方 18:17 的提交
+  7b12d223 逐字相同，**重复项，不采纳**。本轮按派单要求尝试真浏览器
+  点测：浏览器工具层拒绝访问本机回环地址、后台任务不适用用户接管，
+  故改为静态核验——`skipChangeBtn` 绑定 `show("appView") + refresh()`，
+  `refresh()` 定义存在且依次调 `loadTags()`/`loadList()`，全文件已无
+  `loadAll` 残留；未改密时接口可用的 hint-only 行为由
+  test_must_change_is_hint_only 锁定。
+- **P1**：分支报告 P1 为空；其 P1-1（强制改密）在报告中已明确按
+  DECISIONS.md 销项，实查无冲突条目——**再确认无冲突**。
+- **P2-1（改密文案「会要求改密码」）**：README 安装节（README:51）与登录页
+  小字已改为「会提示改密（可以跳过）」，与只提示口径一致。**已采纳为文案修正**。
+- **P2-2（自测命令缺全新数据库说明）**：README 自测命令已补
+  `BOOKMARK_DB_PATH`（bash 用 /tmp/bm-live.db，PowerShell 用
+  $env:TEMP\bm-live.db）。**已采纳**。
+- **P2-3（UPSTREAM.md 死链）**：main 早在 e33673d2 修过；本轮全仓库 grep
+  「与 Linkding 的关系」零命中。**已销项**。
+- **P2-4（README 漏写 /health）**：功能清单已补一句。**已采纳**。
+- **P2-5（httpx2 无人直接 import）**：保留。requirements-dev 的
+  httpx2==2.16.0 是 TASK-006 为消除 Starlette TestClient 弃用警告而钉的
+  测试链依赖，无业务 import 即为正常，不删。
+- **P2-6（删书签后残留零引用标签）**：按设计保留。标签为独立词汇表
+  （Linkding 同款语义），前端 chips 已只展示 count>0 的标签，不展示即
+  不视为脏数据。
+- **P2-7（不监听 ::1）**：本轮不改；`BM_HOST` 环境变量可由用户自行设为
+  ::1 或 0.0.0.0，默认只绑 127.0.0.1 是安全考量。
+- **P2-8（密码哈希 `!=` 比对／会话 token 明文存库）**：密码哈希比对已换
+  `secrets.compare_digest`（提交 1f922540）；会话 token 存库按口径总表
+  第 8 条不强制哈希（单用户本地库），**按口径关闭**。
+
 ## 背景备查
 
 - TASK-006 审查轮次曾按"先改密才能用"实现过 403 拦截（提交 f2ec2ec5），

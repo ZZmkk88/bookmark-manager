@@ -19,6 +19,8 @@
   （含 169.254.169.254 这类云元数据地址）的网址会被拒绝并给出提示，
   跟随重定向时每一跳都会重新校验
 - **搜索**：关键词匹配标题、网址、描述、备注和标签名
+- **健康检查**：`GET /health` 返回 `{"ok": true, "app": "bookmark-manager"}`，
+  可用来判断服务是否在正常运行
 - **稍后读**：unread 标记，可只看稍后读列表
 - **归档**：书签可归档，默认列表不显示，在「看归档区」里查看
 - **导入**：浏览器导出的书签 HTML 文件（Netscape 格式，Chrome/Firefox/Edge 通用），
@@ -48,7 +50,7 @@ python -m venv .venv
 .venv\Scripts\python app.py        # 默认监听 8000 端口
 ```
 
-启动后打开 http://localhost:8000 ，默认账号 **admin / admin123**，首次登录会要求改密码。
+启动后打开 http://localhost:8000 ，默认账号 **admin / admin123**，首次登录会提示改密（只提示、不强制，可以跳过，下次登录还会提示）。
 
 可选环境变量：
 
@@ -80,13 +82,13 @@ python -m venv .venv
 真实数据全流程自测（需先以 8123 端口、全新数据库启动服务，两个系统同理，把路径换成对应写法）：
 
 ```bash
-PORT=8123 .venv/bin/python app.py &
+PORT=8123 BOOKMARK_DB_PATH=/tmp/bm-live.db .venv/bin/python app.py &
 BASE=http://127.0.0.1:8123 .venv/bin/python tests/live_selftest.py
 ```
 
 ```powershell
 # Windows (PowerShell)，开两个窗口分别执行：
-$env:PORT=8123; .venv\Scripts\python app.py
+$env:PORT=8123; $env:BOOKMARK_DB_PATH="$env:TEMP\bm-live.db"; .venv\Scripts\python app.py
 $env:BASE="http://127.0.0.1:8123"; .venv\Scripts\python tests\live_selftest.py
 ```
 
