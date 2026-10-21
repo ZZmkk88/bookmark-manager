@@ -19,3 +19,13 @@
 - 本项目代码为独立重写，未复制上游源码；借鉴的是功能设计、数据模型、
   抓取策略、标签规则与 Netscape 书签格式约定，具体对照见 README 的
   「与 Linkding 的关系」一节和 NOTES.md 的调研笔记。
+
+## 上游许可证核验值
+
+便于离线复查：2026-10-21 通过 GitHub 接口实查时，上游 `LICENSE.txt`
+在其 `source_commit`（27b7303baf41bb28babc610ac8eaa486e1ddfab5）下的
+Git blob SHA 为 `357447c54f16445a0e4e6cc9b3b89265b4b9fb42`，
+可通过 GitHub API 逐字节核对上游原文。
+
+上游版权声明原文（逐字复制）：
+> Copyright (c) 2019 Sascha Ißbrücker
