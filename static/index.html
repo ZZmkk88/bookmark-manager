@@ -181,11 +181,24 @@ $("loginBtn").onclick = async () => {
 
 $("changeBtn").onclick = async () => {
   $("changeMsg").textContent = "";
+  const oldPass = $("oldPass").value;
+  const newPass = $("newPass").value;
   try {
+    // /api/me is reachable with the initial token: grab the username first
+    const me = await api("/api/me");
     await api("/api/change-password", {
       method: "POST",
-      body: JSON.stringify({ old_password: $("oldPass").value, new_password: $("newPass").value }),
+      body: JSON.stringify({ old_password: oldPass, new_password: newPass }),
     });
+    // the server drops all sessions on password change: log in again automatically
+    const res = await fetch("/api/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: me.username, password: newPass }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "改密成功，请重新登录");
+    token = data.token;
+    localStorage.setItem("bm_token", token);
     boot();
   } catch (e) { $("changeMsg").textContent = e.message; }
 };

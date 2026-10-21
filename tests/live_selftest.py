@@ -65,6 +65,11 @@ def main():
                         body={"old_password": "admin123", "new_password": "selftest-pass-1"})
     assert status == 200, text
     steps.append("改密成功")
+    # password change drops all sessions: the initial token is dead, log in again
+    status, text = call("POST", "/api/login", body={"username": "admin", "password": "selftest-pass-1"})
+    assert status == 200, text
+    token = json.loads(text)["token"]
+    steps.append("改密后旧 token 失效，重新登录拿到新 token")
 
     # import via multipart
     boundary = "----bm-boundary"
