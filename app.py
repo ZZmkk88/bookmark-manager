@@ -6,9 +6,11 @@ in NOTES.md. Single-file FastAPI backend + SQLite + one static page.
 import hashlib
 import html as html_lib
 from contextlib import asynccontextmanager
+import ipaddress
 import os
 import re
 import secrets
+import socket
 import sqlite3
 import time
 import urllib.error
@@ -346,6 +348,88 @@ FAKE_HEADERS = {
 FETCH_LIMIT = 1024 * 1024
 
 
+# ---------------------------------------------------------------------------
+# SSRF guard for the fetch layer: the server must never fetch loopback,
+# private or link-local targets (including cloud metadata endpoints such as
+# 169.254.169.254) just because a user saved such a URL.
+# ---------------------------------------------------------------------------
+
+class BlockedUrlError(Exception):
+    """A fetch target that resolves to a non-public address."""
+
+
+def resolve_host_addresses(hostname: str) -> list[str]:
+    """Resolve a hostname to its IP addresses (strings). Kept as a separate
+    module-level function so tests can inject fake resolutions."""
+    infos = socket.getaddrinfo(hostname, None, proto=socket.IPPROTO_TCP)
+    return sorted({info[4][0] for info in infos})
+
+
+def _is_public_ip(ip_text: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(ip_text)
+    except ValueError:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return not (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def ensure_fetch_allowed(url: str) -> None:
+    """Raise BlockedUrlError if the URL's host is, or resolves to, a
+    non-public address. IP literals are checked directly; hostnames are
+    checked against every resolved address (fail closed on any bad one)."""
+    host = urllib.parse.urlparse(url).hostname
+    if not host:
+        raise BlockedUrlError("网址缺少主机名，已拒绝抓取")
+    try:
+        addresses = [str(ipaddress.ip_address(host))]
+    except ValueError:
+        try:
+            addresses = resolve_host_addresses(host)
+        except OSError:
+            # unresolvable here means the fetch itself will fail quietly too;
+            # blocking is reserved for targets we can identify as non-public
+            return
+    for ip_text in addresses:
+        if not _is_public_ip(ip_text):
+            raise BlockedUrlError(f"拒绝抓取内网/保留地址：{host}（{ip_text}）")
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_FETCH_OPENER = urllib.request.build_opener(_NoRedirectHandler())
+MAX_REDIRECTS = 5
+
+
+def _open_with_redirect_guard(url: str):
+    """Open a URL following redirects manually, re-validating every hop
+    with the SSRF guard before it is fetched. Returns the final response."""
+    current = url
+    for _ in range(MAX_REDIRECTS + 1):
+        ensure_fetch_allowed(current)
+        req = urllib.request.Request(current, headers=FAKE_HEADERS)
+        try:
+            return _FETCH_OPENER.open(req, timeout=10)
+        except urllib.error.HTTPError as exc:
+            location = exc.headers.get("Location") if exc.headers else None
+            if exc.code in (301, 302, 303, 307, 308) and location:
+                current = urllib.parse.urljoin(current, location)
+                continue
+            raise
+    raise BlockedUrlError("重定向次数过多，已拒绝抓取")
+
+
 class _HeadParser(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -390,13 +474,14 @@ def _decode_page(raw: bytes, content_type: str) -> str:
 
 def fetch_metadata(url: str) -> dict:
     """Fetch a page and extract title/description. Returns empty values on
-    any failure instead of raising (same contract as Linkding)."""
+    ordinary failures instead of raising (same contract as Linkding);
+    only SSRF blocks raise BlockedUrlError, so callers can surface them."""
     result = {"url": url, "title": None, "description": None}
+    ensure_fetch_allowed(url)
     try:
-        req = urllib.request.Request(url, headers=FAKE_HEADERS)
         chunks = []
         size = 0
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with _open_with_redirect_guard(url) as resp:
             content_type = resp.headers.get("Content-Type", "")
             while True:
                 chunk = resp.read(50 * 1024)
@@ -419,6 +504,8 @@ def fetch_metadata(url: str) -> dict:
         description = parser.meta.get("description") or parser.meta.get("og:description")
         result["title"] = title.strip() if title else None
         result["description"] = description.strip() if description else None
+    except BlockedUrlError:
+        raise
     except Exception:
         pass
     return result
@@ -431,7 +518,10 @@ class FetchIn(BaseModel):
 @app.post("/api/fetch-metadata")
 def fetch_metadata_api(body: FetchIn, user: sqlite3.Row = Depends(current_user)):
     url = validate_url(body.url)
-    meta = fetch_metadata(url)
+    try:
+        meta = fetch_metadata(url)
+    except BlockedUrlError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     if meta.get("title"):
         validate_title_length(meta["title"])
     return meta
@@ -511,7 +601,10 @@ def create_bookmark(body: BookmarkIn, user: sqlite3.Row = Depends(current_user))
     title = (body.title or "").strip()
     description = (body.description or "").strip()
     if not title:
-        meta = fetch_metadata(url)
+        try:
+            meta = fetch_metadata(url)
+        except BlockedUrlError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         title = (meta.get("title") or "").strip()
         if not description:
             description = (meta.get("description") or "").strip()

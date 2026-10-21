@@ -1,9 +1,11 @@
 """Automated tests for bookmark-manager. Run: .venv/bin/python -m pytest tests/ -q"""
 import os
+import socket
 import sqlite3
 import tempfile
 import threading
 import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -233,6 +235,18 @@ OG_PAGE = """<!DOCTYPE html><html><head>
 
 class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/redir-private":
+            self.send_response(302)
+            self.send_header("Location", "http://169.254.169.254/latest/meta-data")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if self.path == "/redir-page":
+            self.send_response(302)
+            self.send_header("Location", "/page")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         body = OG_PAGE if self.path == "/og" else FAKE_PAGE
         raw = body.encode("utf-8")
         self.send_response(200)
@@ -254,19 +268,25 @@ def local_server():
     srv.shutdown()
 
 
-def test_fetch_metadata_real_http(local_server):
+def test_fetch_metadata_real_http(local_server, monkeypatch):
+    # the local test server is a loopback target, which the SSRF guard now
+    # blocks on purpose; these parsing tests stub the guard out so they keep
+    # testing the extraction logic itself (guard behaviour has its own tests)
+    monkeypatch.setattr(appmod, "ensure_fetch_allowed", lambda url: None)
     meta = appmod.fetch_metadata(local_server + "/page")
     assert meta["title"] == "真实抓取标题"
     assert meta["description"] == "真实抓取描述"
 
 
-def test_fetch_metadata_og_fallback(local_server):
+def test_fetch_metadata_og_fallback(local_server, monkeypatch):
+    monkeypatch.setattr(appmod, "ensure_fetch_allowed", lambda url: None)
     meta = appmod.fetch_metadata(local_server + "/og")
     assert meta["title"] == "OG标题"
     assert meta["description"] == "OG描述"
 
 
-def test_fetch_metadata_failure_is_quiet():
+def test_fetch_metadata_failure_is_quiet(monkeypatch):
+    monkeypatch.setattr(appmod, "ensure_fetch_allowed", lambda url: None)
     meta = appmod.fetch_metadata("http://127.0.0.1:1/unreachable")
     assert meta["title"] is None and meta["description"] is None
 
@@ -485,7 +505,9 @@ def test_health_endpoint(client):
     assert res.json() == {"ok": True, "app": "bookmark-manager"}
 
 
-def test_fetch_metadata_route(client, auth, local_server):
+def test_fetch_metadata_route(client, auth, local_server, monkeypatch):
+    # loopback target: stub the SSRF guard (see test_fetch_metadata_real_http)
+    monkeypatch.setattr(appmod, "ensure_fetch_allowed", lambda url: None)
     res = client.post("/api/fetch-metadata", json={"url": local_server + "/page"}, headers=auth)
     assert res.status_code == 200
     assert res.json()["title"] == "真实抓取标题"
@@ -601,3 +623,67 @@ def test_import_overlong_title_counts_failed(client, auth):
     assert res.json()["total"] == 1
     res = client.get("/api/bookmarks", params={"q": "imp-long"}, headers=auth)
     assert res.json()["total"] == 0
+
+
+# ------------------------------------------------------------------ SSRF ----
+
+def test_ssrf_literal_private_addresses_blocked():
+    for url in (
+        "http://127.0.0.1/admin",
+        "http://10.0.0.5/",
+        "http://172.16.0.9/",
+        "http://192.168.1.1/",
+        "http://169.254.169.254/latest/meta-data",
+        "http://[::1]/",
+        "http://0.0.0.0/",
+    ):
+        with pytest.raises(appmod.BlockedUrlError):
+            appmod.fetch_metadata(url)
+
+
+def test_ssrf_domain_resolving_private_blocked(monkeypatch):
+    monkeypatch.setattr(
+        appmod, "resolve_host_addresses", lambda host: ["192.168.10.8"]
+    )
+    with pytest.raises(appmod.BlockedUrlError):
+        appmod.fetch_metadata("https://evil.example/page")
+
+
+def test_ssrf_api_returns_400_for_metadata_ip(client, auth):
+    res = client.post(
+        "/api/fetch-metadata",
+        json={"url": "http://169.254.169.254/latest/meta-data"},
+        headers=auth,
+    )
+    assert res.status_code == 400
+    assert "拒绝抓取" in res.json()["detail"]
+
+
+def test_ssrf_public_allowed_and_redirect_hops_checked(local_server, monkeypatch):
+    # pretend public.example is a public host (resolver stub returns a public
+    # IP) while routing its traffic to the local test server (getaddrinfo stub)
+    port = int(local_server.rsplit(":", 1)[1])
+    real_getaddrinfo = socket.getaddrinfo
+
+    def fake_getaddrinfo(host, port_, *args, **kwargs):
+        if host == "public.example":
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
+        return real_getaddrinfo(host, port_, *args, **kwargs)
+
+    monkeypatch.setattr(appmod, "resolve_host_addresses", lambda host: ["93.184.216.34"])
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    # bypass any ambient env proxy (the fake host must be reached directly)
+    monkeypatch.setattr(
+        appmod, "_FETCH_OPENER",
+        urllib.request.build_opener(appmod._NoRedirectHandler, urllib.request.ProxyHandler({})),
+    )
+    base = f"http://public.example:{port}"
+    # public target is fetched normally
+    meta = appmod.fetch_metadata(base + "/page")
+    assert meta["title"] == "真实抓取标题"
+    # a redirect to another public page on the same host is followed
+    meta = appmod.fetch_metadata(base + "/redir-page")
+    assert meta["title"] == "真实抓取标题"
+    # but a redirect hop landing on a metadata/private address is blocked
+    with pytest.raises(appmod.BlockedUrlError):
+        appmod.fetch_metadata(base + "/redir-private")
