@@ -47,7 +47,8 @@ python -m venv .venv
 | 变量 | 说明 | 默认 |
 |---|---|---|
 | `PORT` | 监听端口（Windows PowerShell 里用 `$env:PORT=8123` 设置） | 8000 |
-| `BOOKMARK_DB_PATH` | SQLite 数据库文件位置 | `data/bookmarks.db` |
+| `BM_HOST` | 监听地址。默认 `127.0.0.1`（仅本机可访问）；设为 `0.0.0.0` 可让局域网访问，**请务必先改掉默认密码** | 127.0.0.1 |
+| `BOOKMARK_DB_PATH` | SQLite 数据库文件位置；默认值是 app.py 所在目录下的 `data/bookmarks.db`（不跟随启动时的当前目录走） | `data/bookmarks.db` |
 | `BM_INITIAL_USERNAME` / `BM_INITIAL_PASSWORD` | 首次启动创建的初始账号 | admin / admin123 |
 
 ## 测试

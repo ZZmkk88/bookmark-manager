@@ -26,6 +26,9 @@ DB_PATH = os.environ.get("BOOKMARK_DB_PATH", str(BASE_DIR / "data" / "bookmarks.
 TOKEN_TTL_SECONDS = 24 * 60 * 60
 INITIAL_USERNAME = os.environ.get("BM_INITIAL_USERNAME", "admin")
 INITIAL_PASSWORD = os.environ.get("BM_INITIAL_PASSWORD", "admin123")
+# default bind address: localhost only, so the default credentials are never
+# exposed to the LAN before the initial password is changed
+HOST = os.environ.get("BM_HOST", "127.0.0.1")
 MAX_URL_LENGTH = 2048
 MAX_TITLE_LENGTH = 512
 MAX_TAG_LENGTH = 64
@@ -860,4 +863,4 @@ def health():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "8000")))
+    uvicorn.run(app, host=HOST, port=int(os.environ.get("PORT", "8000")))
