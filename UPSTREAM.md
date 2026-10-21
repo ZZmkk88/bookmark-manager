@@ -17,8 +17,8 @@
 - `attribution` 的版权行逐字复制自上游仓库 `LICENSE.txt` 原文第一行版权声明，
   未做任何改动（上游许可证标题为 "The MIT License (MIT)"）。
 - 本项目代码为独立重写，未复制上游源码；借鉴的是功能设计、数据模型、
-  抓取策略、标签规则与 Netscape 书签格式约定，具体对照见 README 的
-  「与 Linkding 的关系」一节和 NOTES.md 的调研笔记。
+  抓取策略、标签规则与 Netscape 书签格式约定，具体对照见 README 开篇的
+  简要说明段落和 NOTES.md 的调研笔记。
 
 ## 上游许可证核验值
 
