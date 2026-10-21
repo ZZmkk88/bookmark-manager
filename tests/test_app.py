@@ -375,3 +375,25 @@ def test_must_change_guard_blocks_business(client):
         headers=h2,
     )
     assert res.status_code == 200
+
+
+def test_import_updates_existing_and_search_notes(client, auth):
+    html = (
+        "<!DOCTYPE NETSCAPE-Bookmark-file-1><DL><p>"
+        '<DT><A HREF="https://example.com/manual" ADD_DATE="1700000000" TAGS="upd">第二版标题</A>'
+        "<DD>第二版描述[linkding-notes]第二版备注[/linkding-notes]"
+        "</DL><p>"
+    )
+    res = client.post(
+        "/api/import",
+        files={"file": ("u.html", html.encode("utf-8"), "text/html")},
+        headers=auth,
+    )
+    result = res.json()
+    assert result["success"] == 1 and result["failed"] == 0, result
+    res = client.get("/api/bookmarks", params={"q": "第二版"}, headers=auth)
+    bms = res.json()["bookmarks"]
+    assert len(bms) == 1 and bms[0]["title"] == "第二版标题"
+    # description-only and notes-only keywords are searchable
+    assert client.get("/api/bookmarks", params={"q": "第二版描述"}, headers=auth).json()["total"] == 1
+    assert client.get("/api/bookmarks", params={"q": "第二版备注"}, headers=auth).json()["total"] == 1
