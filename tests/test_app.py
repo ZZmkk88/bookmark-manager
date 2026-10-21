@@ -440,3 +440,28 @@ def test_long_tags_dropped_and_reported(client, auth):
     bm = res.json()
     assert bm["tags"] == ["ok"]
     assert bm["dropped_tags"] == [long_tag]
+
+
+def test_search_escapes_like_wildcards(client, auth):
+    res = client.post(
+        "/api/bookmarks",
+        json={"url": "https://example.com/pct", "title": "100%done 进度"},
+        headers=auth,
+    )
+    assert res.status_code == 201
+    res = client.post(
+        "/api/bookmarks",
+        json={"url": "https://example.com/und", "title": "keep_underscore 笔记",
+              "notes": "路径 C:\\temp 记录"},
+        headers=auth,
+    )
+    assert res.status_code == 201
+    # % matches literally, not as a wildcard
+    assert client.get("/api/bookmarks", params={"q": "%"}, headers=auth).json()["total"] == 1
+    assert client.get("/api/bookmarks", params={"q": "e%d"}, headers=auth).json()["total"] == 0
+    # _ matches literally, not as any single character
+    assert client.get("/api/bookmarks", params={"q": "keep_underscore"}, headers=auth).json()["total"] == 1
+    assert client.get("/api/bookmarks", params={"q": "keepXunderscore"}, headers=auth).json()["total"] == 0
+    # a backslash in the query matches a literal backslash (here: in notes)
+    assert client.get("/api/bookmarks", params={"q": "\\"}, headers=auth).json()["total"] == 1
+

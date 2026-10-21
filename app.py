@@ -558,9 +558,13 @@ def list_bookmarks(
             params.append(sanitize_tag_name(tag).lower())
         if q:
             joins.append("LEFT JOIN bookmark_tags bq ON bq.bookmark_id = b.id LEFT JOIN tags tq ON tq.id = bq.tag_id")
-            like = f"%{q}%"
+            # escape LIKE wildcards so % and _ in the query match literally
+            escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            like = f"%{escaped}%"
             where.append(
-                "(b.title LIKE ? OR b.url LIKE ? OR b.description LIKE ? OR b.notes LIKE ? OR tq.name LIKE ?)"
+                "(b.title LIKE ? ESCAPE '\\' OR b.url LIKE ? ESCAPE '\\'"
+                " OR b.description LIKE ? ESCAPE '\\' OR b.notes LIKE ? ESCAPE '\\'"
+                " OR tq.name LIKE ? ESCAPE '\\')"
             )
             params.extend([like, like, like, like, like])
         sql += " " + " ".join(joins) + " WHERE " + " AND ".join(where)
