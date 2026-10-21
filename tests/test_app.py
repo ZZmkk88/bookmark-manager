@@ -3,6 +3,7 @@ import os
 import sqlite3
 import tempfile
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -469,3 +470,33 @@ def test_search_escapes_like_wildcards(client, auth):
 def test_docs_not_public(client):
     for path in ("/docs", "/redoc", "/openapi.json"):
         assert client.get(path).status_code == 404, path
+
+
+def test_logout_invalidates_token(client):
+    data = do_login(client)
+    h = {"Authorization": f"Bearer {data['token']}"}
+    assert client.post("/api/logout", headers=h).status_code == 200
+    assert client.get("/api/me", headers=h).status_code == 401
+
+
+def test_health_endpoint(client):
+    res = client.get("/health")
+    assert res.status_code == 200
+    assert res.json() == {"ok": True, "app": "bookmark-manager"}
+
+
+def test_fetch_metadata_route(client, auth, local_server):
+    res = client.post("/api/fetch-metadata", json={"url": local_server + "/page"}, headers=auth)
+    assert res.status_code == 200
+    assert res.json()["title"] == "真实抓取标题"
+
+
+def test_token_ttl_is_24h(client):
+    before = time.time()
+    data = do_login(client)
+    conn = sqlite3.connect(os.environ["BOOKMARK_DB_PATH"])
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT expires_at FROM sessions WHERE token = ?", (data["token"],)).fetchone()
+    conn.close()
+    assert row is not None
+    assert abs(row["expires_at"] - (before + 24 * 3600)) < 120
