@@ -359,7 +359,7 @@ class _HeadParser(HTMLParser):
 
 def _decode_page(raw: bytes, content_type: str) -> str:
     charset = None
-    m = re.search(r"charset=([\w\-]+)", content_type or "", re.I)
+    m = re.search(r'charset=["\']?([\w\-]+)', content_type or "", re.I)
     if m:
         charset = m.group(1)
     if not charset:

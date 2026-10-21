@@ -419,3 +419,9 @@ def test_duplicate_detection_across_default_port(client, auth):
         headers=auth,
     )
     assert res.status_code == 409
+
+
+def test_quoted_charset_header():
+    page = '<html><head><title>中文标题</title></head></html>'.encode("gbk")
+    assert "中文标题" in appmod._decode_page(page, 'text/html; charset="gbk"')
+    assert "中文标题" in appmod._decode_page(page, "text/html; charset=gbk")
