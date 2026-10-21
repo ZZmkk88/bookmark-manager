@@ -265,7 +265,9 @@ def login(body: LoginIn):
         user = conn.execute(
             "SELECT * FROM users WHERE username = ?", (body.username.strip(),)
         ).fetchone()
-        if not user or hash_password(body.password, user["salt"]) != user["password_hash"]:
+        if not user or not secrets.compare_digest(
+            hash_password(body.password, user["salt"]), user["password_hash"]
+        ):
             raise HTTPException(status_code=401, detail="用户名或密码不正确")
         token = secrets.token_urlsafe(32)
         conn.execute(
@@ -298,7 +300,9 @@ def logout(request: Request, user: sqlite3.Row = Depends(current_user)):
 def change_password(body: ChangePasswordIn, user: sqlite3.Row = Depends(current_user)):
     if len(body.new_password) < 6:
         raise HTTPException(status_code=400, detail="新密码至少 6 位")
-    if hash_password(body.old_password, user["salt"]) != user["password_hash"]:
+    if not secrets.compare_digest(
+        hash_password(body.old_password, user["salt"]), user["password_hash"]
+    ):
         raise HTTPException(status_code=400, detail="旧密码不正确")
     salt = secrets.token_hex(16)
     conn = get_db()
