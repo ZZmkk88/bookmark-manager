@@ -365,6 +365,24 @@ def resolve_host_addresses(hostname: str) -> list[str]:
     return sorted({info[4][0] for info in infos})
 
 
+# Explicit deny-list of non-public ranges: loopback, RFC1918 private,
+# link-local (incl. cloud metadata 169.254.169.254), CGNAT shared space,
+# multicast and reserved space, plus the IPv6 equivalents. An explicit list
+# is used instead of ipaddress' is_private catch-all, whose extra entries
+# (benchmarking 198.18/15, documentation prefixes) are unroutable but are
+# not internal targets, and flagging them breaks fetches in environments
+# whose DNS answers with such addresses for public names.
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network(cidr)
+    for cidr in (
+        "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
+        "169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.168.0.0/16",
+        "224.0.0.0/4", "240.0.0.0/4",
+        "::/128", "::1/128", "fc00::/7", "fe80::/10", "ff00::/8",
+    )
+]
+
+
 def _is_public_ip(ip_text: str) -> bool:
     try:
         ip = ipaddress.ip_address(ip_text)
@@ -372,14 +390,7 @@ def _is_public_ip(ip_text: str) -> bool:
         return False
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
-    return not (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
+    return not any(ip in net for net in _BLOCKED_NETWORKS if net.version == ip.version)
 
 
 def ensure_fetch_allowed(url: str) -> None:
