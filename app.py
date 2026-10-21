@@ -760,6 +760,12 @@ def delete_bookmark(bookmark_id: int, user: sqlite3.Row = Depends(current_user))
         _load_bookmark(conn, user["id"], bookmark_id)
         conn.execute("DELETE FROM bookmark_tags WHERE bookmark_id = ?", (bookmark_id,))
         conn.execute("DELETE FROM bookmarks WHERE id = ?", (bookmark_id,))
+        # tags are not removed by the bookmark FK; drop rows nothing still references
+        conn.execute(
+            "DELETE FROM tags WHERE user_id = ?"
+            " AND id NOT IN (SELECT tag_id FROM bookmark_tags)",
+            (user["id"],),
+        )
         conn.commit()
         return {"ok": True}
     finally:

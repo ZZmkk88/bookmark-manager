@@ -48,7 +48,9 @@ python -m venv .venv
 .venv\Scripts\python app.py        # 默认监听 8000 端口
 ```
 
-启动后打开 http://localhost:8000 ，默认账号 **admin / admin123**，首次登录会要求改密码。
+启动后打开 http://localhost:8000 ，默认账号 **admin / admin123**，首次登录会提示改密，可以跳过。
+
+`GET /health` 不需要登录，返回 `{"ok":true,"app":"bookmark-manager"}`。
 
 可选环境变量：
 
@@ -80,13 +82,14 @@ python -m venv .venv
 真实数据全流程自测（需先以 8123 端口、全新数据库启动服务，两个系统同理，把路径换成对应写法）：
 
 ```bash
-PORT=8123 .venv/bin/python app.py &
+PORT=8123 BOOKMARK_DB_PATH=./data/live-selftest.db .venv/bin/python app.py &
 BASE=http://127.0.0.1:8123 .venv/bin/python tests/live_selftest.py
 ```
 
 ```powershell
-# Windows (PowerShell)，开两个窗口分别执行：
-$env:PORT=8123; .venv\Scripts\python app.py
+# Windows (PowerShell)，开两个窗口分别执行。
+# BOOKMARK_DB_PATH 指向一个当时还不存在的库文件（自测会改掉初始密码，旧库不能再登录 admin/admin123）：
+$env:PORT=8123; $env:BOOKMARK_DB_PATH=".\data\live-selftest.db"; .venv\Scripts\python app.py
 $env:BASE="http://127.0.0.1:8123"; .venv\Scripts\python tests\live_selftest.py
 ```
 
