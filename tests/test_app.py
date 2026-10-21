@@ -339,8 +339,9 @@ def test_export_and_roundtrip(client, auth):
     assert any(b["url"] == "https://example.org/b" for b in res.json()["bookmarks"])
 
 
-def test_must_change_guard_blocks_business(client):
-    # put the account back into the forced-change state, like a fresh install
+def test_must_change_is_hint_only(client):
+    # Decision (2026-10-21, see DECISIONS.md): the initial-password flag only
+    # prompts, it never blocks the API. Put the account into that state first.
     conn = sqlite3.connect(os.environ["BOOKMARK_DB_PATH"])
     conn.execute("UPDATE users SET must_change_password = 1 WHERE username = 'admin'")
     conn.commit()
@@ -348,32 +349,30 @@ def test_must_change_guard_blocks_business(client):
     data = do_login(client)
     assert data["must_change_password"] is True
     h = {"Authorization": f"Bearer {data['token']}"}
-    # business endpoints are refused before the initial password is changed
-    assert client.get("/api/bookmarks", headers=h).status_code == 403
-    assert client.post(
-        "/api/bookmarks", json={"url": "https://example.com/guard", "title": "x"}, headers=h
-    ).status_code == 403
-    # account info and logout stay reachable; logout kills the token
-    assert client.get("/api/me", headers=h).status_code == 200
-    assert client.post("/api/logout", headers=h).status_code == 200
-    # change password works with a fresh login, and kills the old token
-    data = do_login(client)
-    h = {"Authorization": f"Bearer {data['token']}"}
+    # business endpoints stay fully usable before the password is changed
+    assert client.get("/api/bookmarks", headers=h).status_code == 200
+    res = client.post(
+        "/api/bookmarks", json={"url": "https://example.com/hint", "title": "提示可用"}, headers=h
+    )
+    assert res.status_code == 201
+    # the flag is still reported so the UI can keep prompting
+    me = client.get("/api/me", headers=h)
+    assert me.status_code == 200 and me.json()["must_change_password"] is True
+    # changing the password still drops every session (kept safety behaviour)
     res = client.post(
         "/api/change-password",
-        json={"old_password": "admin123", "new_password": "guardpass1"},
+        json={"old_password": "admin123", "new_password": "hintpass1"},
         headers=h,
     )
     assert res.status_code == 200
     assert client.get("/api/me", headers=h).status_code == 401
-    data2 = do_login(client, "guardpass1")
+    data2 = do_login(client, "hintpass1")
     assert data2["must_change_password"] is False
-    h2 = {"Authorization": f"Bearer {data2['token']}"}
-    assert client.get("/api/bookmarks", headers=h2).status_code == 200
     # restore the password so nothing else is affected
+    h2 = {"Authorization": f"Bearer {data2['token']}"}
     res = client.post(
         "/api/change-password",
-        json={"old_password": "guardpass1", "new_password": "admin123"},
+        json={"old_password": "hintpass1", "new_password": "admin123"},
         headers=h2,
     )
     assert res.status_code == 200

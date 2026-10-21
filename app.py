@@ -247,19 +247,6 @@ def current_user(request: Request) -> sqlite3.Row:
         conn.close()
 
 
-def active_user(request: Request, user: sqlite3.Row = Depends(current_user)) -> sqlite3.Row:
-    """Business endpoints: blocked until the initial password has been changed.
-
-    The forced password-change screen must not be bypassable via the API:
-    only change-password, logout and the account info check are allowed
-    while must_change_password is still set.
-    """
-    if user["must_change_password"]:
-        if request.url.path not in ("/api/change-password", "/api/logout", "/api/me"):
-            raise HTTPException(status_code=403, detail="请先修改初始密码再使用")
-    return user
-
-
 @app.post("/api/login")
 def login(body: LoginIn):
     init_db()
@@ -428,7 +415,7 @@ class FetchIn(BaseModel):
 
 
 @app.post("/api/fetch-metadata")
-def fetch_metadata_api(body: FetchIn, user: sqlite3.Row = Depends(active_user)):
+def fetch_metadata_api(body: FetchIn, user: sqlite3.Row = Depends(current_user)):
     url = validate_url(body.url)
     return fetch_metadata(url)
 
@@ -501,7 +488,7 @@ def _bookmark_to_dict(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
 
 
 @app.post("/api/bookmarks", status_code=201)
-def create_bookmark(body: BookmarkIn, user: sqlite3.Row = Depends(active_user)):
+def create_bookmark(body: BookmarkIn, user: sqlite3.Row = Depends(current_user)):
     url = validate_url(body.url)
     normalized = normalize_url(url)
     title = (body.title or "").strip()
@@ -545,7 +532,7 @@ def list_bookmarks(
     tag: str = "",
     archived: str = "0",
     unread: str = "",
-    user: sqlite3.Row = Depends(active_user),
+    user: sqlite3.Row = Depends(current_user),
 ):
     conn = get_db()
     try:
@@ -592,7 +579,7 @@ def _load_bookmark(conn: sqlite3.Connection, user_id: int, bookmark_id: int) -> 
 
 
 @app.get("/api/bookmarks/{bookmark_id}")
-def get_bookmark(bookmark_id: int, user: sqlite3.Row = Depends(active_user)):
+def get_bookmark(bookmark_id: int, user: sqlite3.Row = Depends(current_user)):
     conn = get_db()
     try:
         return _bookmark_to_dict(conn, _load_bookmark(conn, user["id"], bookmark_id))
@@ -601,7 +588,7 @@ def get_bookmark(bookmark_id: int, user: sqlite3.Row = Depends(active_user)):
 
 
 @app.put("/api/bookmarks/{bookmark_id}")
-def update_bookmark(bookmark_id: int, body: BookmarkUpdateIn, user: sqlite3.Row = Depends(active_user)):
+def update_bookmark(bookmark_id: int, body: BookmarkUpdateIn, user: sqlite3.Row = Depends(current_user)):
     conn = get_db()
     try:
         row = _load_bookmark(conn, user["id"], bookmark_id)
@@ -644,7 +631,7 @@ def update_bookmark(bookmark_id: int, body: BookmarkUpdateIn, user: sqlite3.Row 
 
 
 @app.delete("/api/bookmarks/{bookmark_id}")
-def delete_bookmark(bookmark_id: int, user: sqlite3.Row = Depends(active_user)):
+def delete_bookmark(bookmark_id: int, user: sqlite3.Row = Depends(current_user)):
     conn = get_db()
     try:
         _load_bookmark(conn, user["id"], bookmark_id)
@@ -657,7 +644,7 @@ def delete_bookmark(bookmark_id: int, user: sqlite3.Row = Depends(active_user)):
 
 
 @app.get("/api/tags")
-def list_tags(user: sqlite3.Row = Depends(active_user)):
+def list_tags(user: sqlite3.Row = Depends(current_user)):
     conn = get_db()
     try:
         rows = conn.execute(
@@ -822,7 +809,7 @@ def import_netscape(html_text: str, user_id: int) -> dict:
 
 
 @app.post("/api/import")
-async def import_api(file: UploadFile = File(...), user: sqlite3.Row = Depends(active_user)):
+async def import_api(file: UploadFile = File(...), user: sqlite3.Row = Depends(current_user)):
     raw = await file.read()
     if len(raw) > 20 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="文件过大（上限 20MB）")
@@ -869,7 +856,7 @@ def export_netscape(user_id: int) -> str:
 
 
 @app.get("/api/export")
-def export_api(user: sqlite3.Row = Depends(active_user)):
+def export_api(user: sqlite3.Row = Depends(current_user)):
     content = export_netscape(user["id"])
     return Response(
         content=content,
