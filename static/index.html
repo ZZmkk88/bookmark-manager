@@ -205,7 +205,7 @@ $("changeBtn").onclick = async () => {
   } catch (e) { $("changeMsg").textContent = e.message; }
 };
 
-$("skipChangeBtn").onclick = () => { show("appView"); loadAll(); };
+$("skipChangeBtn").onclick = () => { show("appView"); refresh(); };
 $("logoutBtn").onclick = async () => { try { await api("/api/logout", { method: "POST" }); } catch (e) {} logout(); };
 
 $("fetchBtn").onclick = async () => {
