@@ -68,8 +68,10 @@ def normalize_url(url: str) -> str:
         parsed = urllib.parse.urlparse(url)
         scheme = parsed.scheme.lower()
         netloc = parsed.hostname.lower() if parsed.hostname else ""
-        if parsed.port:
-            netloc += f":{parsed.port}"
+        port = parsed.port
+        is_default_port = (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
+        if port and not is_default_port:
+            netloc += f":{port}"
         if parsed.username:
             auth = parsed.username
             if parsed.password:

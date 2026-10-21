@@ -397,3 +397,25 @@ def test_import_updates_existing_and_search_notes(client, auth):
     # description-only and notes-only keywords are searchable
     assert client.get("/api/bookmarks", params={"q": "第二版描述"}, headers=auth).json()["total"] == 1
     assert client.get("/api/bookmarks", params={"q": "第二版备注"}, headers=auth).json()["total"] == 1
+
+
+def test_normalize_url_strips_default_ports():
+    assert appmod.normalize_url("http://example.com:80/a/") == "http://example.com/a"
+    assert appmod.normalize_url("https://example.com:443/a") == "https://example.com/a"
+    assert appmod.normalize_url("http://example.com:8080/a") == "http://example.com:8080/a"
+    assert appmod.normalize_url("https://example.com:8443/a") == "https://example.com:8443/a"
+
+
+def test_duplicate_detection_across_default_port(client, auth):
+    res = client.post(
+        "/api/bookmarks",
+        json={"url": "https://example.com:443/portdup", "title": "端口判重"},
+        headers=auth,
+    )
+    assert res.status_code == 201
+    res = client.post(
+        "/api/bookmarks",
+        json={"url": "https://example.com/portdup", "title": "端口判重2"},
+        headers=auth,
+    )
+    assert res.status_code == 409
