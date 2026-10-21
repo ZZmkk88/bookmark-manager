@@ -2,11 +2,6 @@
 
 一句话定位：一个轻量、可自己部署的网页书签管理器——存链接、自动抓标题和描述、打标签、全文搜索，并能与浏览器互相导入导出书签。
 
-## 与 Linkding 的关系（借鉴了什么、哪些是独立实现）
-
-本项目是对开源项目 [Linkding](https://github.com/sissbruecker/linkding)（MIT 许可证）的
-**复刻学习作品**，上游溯源信息见 [UPSTREAM.md](UPSTREAM.md)，调研笔记见 [NOTES.md](NOTES.md)。
-
 **参考了 Linkding 的设计（思想与格式约定）：**
 
 - 功能范围的划分：书签 + 标签 + 稍后读（unread)+ 归档这套核心概念
