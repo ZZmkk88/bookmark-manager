@@ -393,6 +393,24 @@ def _is_public_ip(ip_text: str) -> bool:
     return not any(ip in net for net in _BLOCKED_NETWORKS if net.version == ip.version)
 
 
+def _coerce_ip_literal(host: str) -> str | None:
+    """Canonical IP string, or None when `host` has to be resolved as a name.
+
+    ipaddress rejects the inet_aton forms that still mean a reserved address:
+    decimal 2130706433 / 2852039166, hex 0x7f000001, octal 0177.0.0.1, short 127.1.
+    """
+    try:
+        return str(ipaddress.ip_address(host))
+    except ValueError:
+        pass
+    if ":" in host:
+        return None
+    try:
+        return socket.inet_ntoa(socket.inet_aton(host))
+    except OSError:
+        return None
+
+
 def ensure_fetch_allowed(url: str) -> None:
     """Raise BlockedUrlError if the URL's host is, or resolves to, a
     non-public address. IP literals are checked directly; hostnames are
@@ -400,9 +418,10 @@ def ensure_fetch_allowed(url: str) -> None:
     host = urllib.parse.urlparse(url).hostname
     if not host:
         raise BlockedUrlError("网址缺少主机名，已拒绝抓取")
-    try:
-        addresses = [str(ipaddress.ip_address(host))]
-    except ValueError:
+    literal = _coerce_ip_literal(host)
+    if literal is not None:
+        addresses = [literal]
+    else:
         try:
             addresses = resolve_host_addresses(host)
         except OSError:
