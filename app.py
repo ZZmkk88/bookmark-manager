@@ -94,23 +94,29 @@ def sanitize_tag_name(tag_name: str) -> str:
     return tag_name.strip().replace(" ", "-")
 
 
-def parse_tag_string(tag_string: str, delimiter: str = ",") -> list[str]:
-    """Split a comma separated tag string, sanitize, dedupe (case-insensitive)."""
+def parse_tag_string(tag_string: str, delimiter: str = ",") -> tuple[list[str], list[str]]:
+    """Split a comma separated tag string, sanitize, dedupe (case-insensitive).
+
+    Returns (names, dropped): names longer than MAX_TAG_LENGTH are not kept
+    and are reported in dropped so callers can tell the user.
+    """
     if not tag_string:
-        return []
+        return [], []
     names = tag_string.strip().split(delimiter)
     names = [sanitize_tag_name(n) for n in names if n.strip()]
     seen = set()
     result = []
+    dropped = []
     for name in names:
         if len(name) > MAX_TAG_LENGTH:
+            dropped.append(name)
             continue
         key = name.lower()
         if key not in seen:
             seen.add(key)
             result.append(name)
     result.sort(key=str.lower)
-    return result
+    return result, dropped
 
 
 def validate_url(url: str) -> str:
@@ -499,7 +505,7 @@ def create_bookmark(body: BookmarkIn, user: sqlite3.Row = Depends(active_user)):
         if not description:
             description = (meta.get("description") or "").strip()
     title = title[:MAX_TITLE_LENGTH]
-    tag_names = parse_tag_string(body.tags or "")
+    tag_names, dropped_tags = parse_tag_string(body.tags or "")
     now = iso(utcnow())
     conn = get_db()
     try:
@@ -519,7 +525,9 @@ def create_bookmark(body: BookmarkIn, user: sqlite3.Row = Depends(active_user)):
         _set_bookmark_tags(conn, user["id"], bookmark_id, tag_names)
         conn.commit()
         row = conn.execute("SELECT * FROM bookmarks WHERE id = ?", (bookmark_id,)).fetchone()
-        return _bookmark_to_dict(conn, row)
+        result = _bookmark_to_dict(conn, row)
+        result["dropped_tags"] = dropped_tags
+        return result
     finally:
         conn.close()
 
@@ -612,10 +620,14 @@ def update_bookmark(bookmark_id: int, body: BookmarkUpdateIn, user: sqlite3.Row 
                 bookmark_id,
             ),
         )
+        dropped_tags: list[str] = []
         if body.tags is not None:
-            _set_bookmark_tags(conn, user["id"], bookmark_id, parse_tag_string(body.tags))
+            tag_names, dropped_tags = parse_tag_string(body.tags)
+            _set_bookmark_tags(conn, user["id"], bookmark_id, tag_names)
         conn.commit()
-        return _bookmark_to_dict(conn, _load_bookmark(conn, user["id"], bookmark_id))
+        result = _bookmark_to_dict(conn, _load_bookmark(conn, user["id"], bookmark_id))
+        result["dropped_tags"] = dropped_tags
+        return result
     finally:
         conn.close()
 
@@ -676,7 +688,7 @@ class NetscapeParser(HTMLParser):
         elif tag == "a":
             self._flush()
             attrs = {k.lower(): (v or "") for k, v in attrs}
-            tag_names = parse_tag_string(attrs.get("tags", ""))
+            tag_names, dropped_tag_names = parse_tag_string(attrs.get("tags", ""))
             archived = ARCHIVED_PSEUDO_TAG in tag_names
             if archived:
                 tag_names.remove(ARCHIVED_PSEUDO_TAG)
@@ -688,6 +700,7 @@ class NetscapeParser(HTMLParser):
                 "add_date": attrs.get("add_date", ""),
                 "last_modified": attrs.get("last_modified", ""),
                 "tag_names": tag_names,
+                "dropped_tag_names": dropped_tag_names,
                 "unread": attrs.get("toread", "") == "1",
                 "is_archived": archived,
             }
@@ -740,12 +753,14 @@ def import_netscape(html_text: str, user_id: int) -> dict:
     parser = NetscapeParser()
     parser.feed(html_text)
     parser.close()
-    result = {"total": 0, "success": 0, "failed": 0, "skipped": 0}
+    result = {"total": 0, "success": 0, "failed": 0, "skipped": 0, "dropped_tags": []}
+    dropped_all: set[str] = set()
     conn = get_db()
     try:
         seen_in_file: set[str] = set()
         for item in parser.bookmarks:
             result["total"] += 1
+            dropped_all.update(item["dropped_tag_names"])
             try:
                 href = (item["href"] or "").strip()
                 parsed = urllib.parse.urlparse(href)
@@ -789,6 +804,7 @@ def import_netscape(html_text: str, user_id: int) -> dict:
             except Exception:
                 result["failed"] += 1
         conn.commit()
+        result["dropped_tags"] = sorted(dropped_all)
         return result
     finally:
         conn.close()

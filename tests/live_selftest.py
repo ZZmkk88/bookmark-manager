@@ -83,7 +83,7 @@ def main():
     assert status == 200, text
     result = json.loads(text)
     steps.append(f"导入真实书签：{result}")
-    assert result == {"total": 9, "success": 9, "failed": 0, "skipped": 0}, result
+    assert result == {"total": 9, "success": 9, "failed": 0, "skipped": 0, "dropped_tags": []}, result
 
     status, text = call("GET", "/api/bookmarks", token)
     data = json.loads(text)

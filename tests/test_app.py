@@ -297,7 +297,9 @@ def test_import_netscape(client, auth):
     )
     assert res.status_code == 200, res.text
     result = res.json()
-    assert result == {"total": 4, "success": 2, "failed": 1, "skipped": 1}, result
+    assert result == {
+        "total": 4, "success": 2, "failed": 1, "skipped": 1, "dropped_tags": []
+    }, result
     res = client.get("/api/bookmarks", params={"q": "示例甲"}, headers=auth)
     bm = res.json()["bookmarks"][0]
     assert bm["unread"] is True
@@ -425,3 +427,16 @@ def test_quoted_charset_header():
     page = '<html><head><title>中文标题</title></head></html>'.encode("gbk")
     assert "中文标题" in appmod._decode_page(page, 'text/html; charset="gbk"')
     assert "中文标题" in appmod._decode_page(page, "text/html; charset=gbk")
+
+
+def test_long_tags_dropped_and_reported(client, auth):
+    long_tag = "x" * 70
+    res = client.post(
+        "/api/bookmarks",
+        json={"url": "https://example.com/longtag", "title": "长标签", "tags": f"ok,{long_tag}"},
+        headers=auth,
+    )
+    assert res.status_code == 201
+    bm = res.json()
+    assert bm["tags"] == ["ok"]
+    assert bm["dropped_tags"] == [long_tag]
