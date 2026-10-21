@@ -297,7 +297,7 @@ def test_import_netscape(client, auth):
     )
     assert res.status_code == 200, res.text
     result = res.json()
-    assert result == {"total": 4, "success": 2, "failed": 2}, result
+    assert result == {"total": 4, "success": 2, "failed": 1, "skipped": 1}, result
     res = client.get("/api/bookmarks", params={"q": "示例甲"}, headers=auth)
     bm = res.json()["bookmarks"][0]
     assert bm["unread"] is True

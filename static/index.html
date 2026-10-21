@@ -366,7 +366,7 @@ $("importFile").addEventListener("change", async e => {
     const res = await fetch("/api/import", { method: "POST", headers: { "Authorization": "Bearer " + token }, body: fd });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || "导入失败");
-    alert("导入完成：共 " + data.total + " 条，成功 " + data.success + " 条，失败/跳过 " + data.failed + " 条");
+    alert("导入完成：共 " + data.total + " 条，成功 " + data.success + " 条，跳过 " + (data.skipped || 0) + " 条（文件内重复），失败 " + data.failed + " 条");
     refresh();
   } catch (err) { alert(err.message); }
   e.target.value = "";

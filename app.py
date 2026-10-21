@@ -738,7 +738,7 @@ def import_netscape(html_text: str, user_id: int) -> dict:
     parser = NetscapeParser()
     parser.feed(html_text)
     parser.close()
-    result = {"total": 0, "success": 0, "failed": 0}
+    result = {"total": 0, "success": 0, "failed": 0, "skipped": 0}
     conn = get_db()
     try:
         seen_in_file: set[str] = set()
@@ -752,7 +752,8 @@ def import_netscape(html_text: str, user_id: int) -> dict:
                     continue
                 normalized = normalize_url(href)
                 if normalized in seen_in_file:
-                    result["failed"] += 1
+                    # same URL twice inside one file: genuinely skipped, not failed
+                    result["skipped"] += 1
                     continue
                 seen_in_file.add(normalized)
                 now = iso(utcnow())
