@@ -3,6 +3,7 @@
 A clean-room re-implementation inspired by Linkding (MIT). Design notes live
 in NOTES.md. Single-file FastAPI backend + SQLite + one static page.
 """
+import concurrent.futures
 import hashlib
 import html as html_lib
 from contextlib import asynccontextmanager
@@ -358,10 +359,23 @@ class BlockedUrlError(Exception):
     """A fetch target that resolves to a non-public address."""
 
 
+DNS_TIMEOUT_SECONDS = 5
+
+
 def resolve_host_addresses(hostname: str) -> list[str]:
     """Resolve a hostname to its IP addresses (strings). Kept as a separate
-    module-level function so tests can inject fake resolutions."""
-    infos = socket.getaddrinfo(hostname, None, proto=socket.IPPROTO_TCP)
+    module-level function so tests can inject fake resolutions.
+
+    DNS gets a bounded timeout: on timeout an OSError is raised so callers
+    treat it as an ordinary (quiet) fetch failure, never as a block, so a
+    stalled resolver cannot hang the API and "只填网址也能保存" keeps working.
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(socket.getaddrinfo, hostname, None, proto=socket.IPPROTO_TCP)
+        try:
+            infos = future.result(timeout=DNS_TIMEOUT_SECONDS)
+        except concurrent.futures.TimeoutError:
+            raise OSError(f"DNS 解析超时：{hostname}")
     return sorted({info[4][0] for info in infos})
 
 
@@ -388,9 +402,34 @@ def _is_public_ip(ip_text: str) -> bool:
         ip = ipaddress.ip_address(ip_text)
     except ValueError:
         return False
-    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
-        ip = ip.ipv4_mapped
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped is not None:
+            ip = ip.ipv4_mapped
+        elif ip.sixtofour is not None:
+            # 6to4 (2002::/16) embeds an IPv4 address: check the embedded one
+            ip = ip.sixtofour
+        elif ip.teredo is not None:
+            # Teredo embeds (server, client): the client is the real endpoint
+            ip = ip.teredo[1]
     return not any(ip in net for net in _BLOCKED_NETWORKS if net.version == ip.version)
+
+
+def _coerce_ip_literal(host: str) -> str | None:
+    """Canonical IP string, or None when `host` has to be resolved as a name.
+
+    ipaddress rejects the inet_aton forms that still mean a reserved address:
+    decimal 2130706433 / 2852039166, hex 0x7f000001, octal 0177.0.0.1, short 127.1.
+    """
+    try:
+        return str(ipaddress.ip_address(host))
+    except ValueError:
+        pass
+    if ":" in host:
+        return None
+    try:
+        return socket.inet_ntoa(socket.inet_aton(host))
+    except OSError:
+        return None
 
 
 def ensure_fetch_allowed(url: str) -> None:
@@ -400,9 +439,10 @@ def ensure_fetch_allowed(url: str) -> None:
     host = urllib.parse.urlparse(url).hostname
     if not host:
         raise BlockedUrlError("网址缺少主机名，已拒绝抓取")
-    try:
-        addresses = [str(ipaddress.ip_address(host))]
-    except ValueError:
+    literal = _coerce_ip_literal(host)
+    if literal is not None:
+        addresses = [literal]
+    else:
         try:
             addresses = resolve_host_addresses(host)
         except OSError:
@@ -886,6 +926,10 @@ def import_netscape(html_text: str, user_id: int) -> dict:
                 href = (item["href"] or "").strip()
                 parsed = urllib.parse.urlparse(href)
                 if parsed.scheme not in ("http", "https") or not parsed.hostname:
+                    result["failed"] += 1
+                    continue
+                if len(href) > MAX_URL_LENGTH:
+                    # same length rule as the create API: never store, count failed
                     result["failed"] += 1
                     continue
                 normalized = normalize_url(href)

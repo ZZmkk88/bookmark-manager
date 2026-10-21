@@ -687,3 +687,75 @@ def test_ssrf_public_allowed_and_redirect_hops_checked(local_server, monkeypatch
     # but a redirect hop landing on a metadata/private address is blocked
     with pytest.raises(appmod.BlockedUrlError):
         appmod.fetch_metadata(base + "/redir-private")
+
+
+def test_ssrf_nonstandard_ip_literals_blocked():
+    # inet_aton forms that still mean a reserved address must not slip past
+    for url, canonical in (
+        ("http://2130706433/", "127.0.0.1"),
+        ("http://2852039166/", "169.254.169.254"),
+        ("http://0x7f000001/", "127.0.0.1"),
+        ("http://0xa9fea9fe/", "169.254.169.254"),
+        ("http://0177.0.0.1/", "127.0.0.1"),
+        ("http://127.1/", "127.0.0.1"),
+        ("http://0/", "0.0.0.0"),
+    ):
+        with pytest.raises(appmod.BlockedUrlError) as excinfo:
+            appmod.fetch_metadata(url)
+        assert "拒绝抓取" in str(excinfo.value)
+        assert canonical in str(excinfo.value)
+
+
+def test_ssrf_public_ip_literals_allowed():
+    for url in ("http://8.8.8.8/", "http://1.2.3.4/"):
+        assert appmod.ensure_fetch_allowed(url) is None
+
+
+def test_ssrf_api_rejects_obfuscated_literal(client, auth):
+    res = client.post(
+        "/api/fetch-metadata", json={"url": "http://2852039166/"}, headers=auth
+    )
+    assert res.status_code == 400
+    assert "拒绝抓取" in res.json()["detail"]
+
+
+def test_ssrf_6to4_embedded_addresses_checked():
+    # 2002:7f00:1:: embeds 127.0.0.1 -> blocked; 2002:0808:0808:: embeds 8.8.8.8
+    with pytest.raises(appmod.BlockedUrlError):
+        appmod.fetch_metadata("http://[2002:7f00:1::]/")
+    assert appmod.ensure_fetch_allowed("http://[2002:0808:0808::]/") is None
+
+
+def test_dns_timeout_is_quiet_failure(monkeypatch):
+    def stalled(*args, **kwargs):
+        time.sleep(2)
+
+    monkeypatch.setattr(appmod, "DNS_TIMEOUT_SECONDS", 0.2)
+    monkeypatch.setattr(socket, "getaddrinfo", stalled)
+    with pytest.raises(OSError):
+        appmod.resolve_host_addresses("slow.example")
+    # and the guard treats it as an ordinary failure, not a block
+    monkeypatch.setattr(
+        appmod, "resolve_host_addresses",
+        lambda host: (_ for _ in ()).throw(OSError("boom")),
+    )
+    assert appmod.ensure_fetch_allowed("https://slow.example/x") is None
+
+
+def test_import_rejects_overlong_url(client, auth):
+    long_url = "https://example.com/" + "u" * 2048
+    html = (
+        "<!DOCTYPE NETSCAPE-Bookmark-file-1><DL><p>"
+        f'<DT><A HREF="{long_url}" ADD_DATE="1700000000">超长网址</A>'
+        '<DT><A HREF="https://example.com/imp-url-ok" ADD_DATE="1700000001">正常</A>'
+        "</DL><p>"
+    )
+    res = client.post(
+        "/api/import",
+        files={"file": ("u.html", html.encode("utf-8"), "text/html")},
+        headers=auth,
+    )
+    result = res.json()
+    assert result["success"] == 1 and result["failed"] == 1, result
+    res = client.get("/api/bookmarks", params={"q": "imp-url-ok"}, headers=auth)
+    assert res.json()["total"] == 1
