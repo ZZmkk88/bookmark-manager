@@ -77,6 +77,7 @@
   <div class="msg err" id="changeMsg"></div>
   <button class="primary" id="changeBtn" style="width:100%">修改密码</button>
   <button id="skipChangeBtn" class="ghost" style="width:100%;margin-top:8px">稍后再说，先用着</button>
+  <button id="changeLogoutBtn" class="ghost" style="width:100%;margin-top:8px">退出登录</button>
 </div>
 
 <!-- 主界面 -->
@@ -205,7 +206,8 @@ $("changeBtn").onclick = async () => {
   } catch (e) { $("changeMsg").textContent = e.message; }
 };
 
-$("skipChangeBtn").onclick = () => { show("appView"); loadAll(); };
+$("skipChangeBtn").onclick = () => { show("appView"); refresh(); };
+$("changeLogoutBtn").onclick = async () => { try { await api("/api/logout", { method: "POST" }); } catch (e) {} logout(); };
 $("logoutBtn").onclick = async () => { try { await api("/api/logout", { method: "POST" }); } catch (e) {} logout(); };
 
 $("fetchBtn").onclick = async () => {

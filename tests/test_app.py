@@ -570,6 +570,18 @@ def test_fetch_metadata_route_rejects_long_title(client, auth, monkeypatch):
     assert "标题过长" in res.json()["detail"]
 
 
+def test_change_view_has_logout_button(client):
+    # the change-password prompt page offers a logout button next to
+    # "稍后再说": it posts to /api/logout and returns to the login view
+    res = client.get("/")
+    assert res.status_code == 200
+    html = res.text
+    assert 'id="changeLogoutBtn"' in html
+    assert "退出登录" in html
+    assert '$("changeLogoutBtn").onclick' in html
+    assert 'id="skipChangeBtn"' in html  # the skip option stays, still hint-only
+
+
 def test_import_overlong_title_counts_failed(client, auth):
     long_title = "长" * 513
     html = (
