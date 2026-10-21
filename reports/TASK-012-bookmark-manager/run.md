@@ -138,3 +138,25 @@ LIVE SELFTEST PASSED
 ## 步骤 5：写审查结论
 
 见 `E:\muse-bridge\out\TASK-012-bookmark-manager\review.md`。修复放在该文件清单之后，不在本步骤改仓库源码。
+
+## 步骤 6：按清单改 P1-1、P1-2 并验证
+
+改了 `app.py`、`README.md`。细节和命令在 `fix-report.md`。
+
+P1-1 之后 pytest：`21 passed, 3 warnings in 4.29s`。`probe_p11.py`：未改密 `GET /api/bookmarks` 为 403 `请先修改密码`，改密后 200，无 token 为 401。
+
+P1-2 之后，同一版改动下：`PORT=8123` 且不设 `HOST` 时日志 `Uvicorn running on http://127.0.0.1:8123`；`HOST=0.0.0.0` `PORT=8001` 时为 `http://0.0.0.0:8001`。`live_selftest.py` 退出码 0，`LIVE SELFTEST PASSED`。该次外网标题为 `title=None`（步骤 4 是 `'3.15.0 Documentation'`），脚本仍通过，记为环境波动，未再重试。
+
+中途 `app.py` 与 `README.md` 被还原成改前内容。已按同一 diff 重新写入。重新写入后的结果：
+
+```
+21 passed, 3 warnings in 4.18s
+```
+
+```
+BOOKMARKS_BEFORE 403 {"detail":"请先修改密码"}
+Uvicorn running on http://127.0.0.1:8000
+TCP    127.0.0.1:8000         0.0.0.0:0              LISTENING       28428
+```
+
+服务已关掉，`netstat` 看不到 8000 的 LISTENING。`git status --short` 仅 `M README.md`、`M app.py`。P1-3 未改代码。
