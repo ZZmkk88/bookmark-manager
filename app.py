@@ -5,6 +5,7 @@ in NOTES.md. Single-file FastAPI backend + SQLite + one static page.
 """
 import hashlib
 import html as html_lib
+from contextlib import asynccontextmanager
 import os
 import re
 import secrets
@@ -34,7 +35,13 @@ MAX_TITLE_LENGTH = 512
 MAX_TAG_LENGTH = 64
 ARCHIVED_PSEUDO_TAG = "linkding:bookmarks.archived"
 
-app = FastAPI(title="bookmark-manager")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="bookmark-manager", lifespan=lifespan)
 
 
 # ---------------------------------------------------------------------------
@@ -190,11 +197,6 @@ def init_db() -> None:
         conn.commit()
     finally:
         conn.close()
-
-
-@app.on_event("startup")
-def _startup() -> None:
-    init_db()
 
 
 # ---------------------------------------------------------------------------
