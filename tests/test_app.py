@@ -500,3 +500,92 @@ def test_token_ttl_is_24h(client):
     conn.close()
     assert row is not None
     assert abs(row["expires_at"] - (before + 24 * 3600)) < 120
+
+
+# ------------------------------------------------------- title length ----
+
+def test_title_length_boundary_create(client, auth):
+    ok_title = "题" * 512
+    res = client.post(
+        "/api/bookmarks",
+        json={"url": "https://example.com/title512", "title": ok_title},
+        headers=auth,
+    )
+    assert res.status_code == 201, res.text
+    assert res.json()["title"] == ok_title
+    res = client.post(
+        "/api/bookmarks",
+        json={"url": "https://example.com/title513", "title": "题" * 513},
+        headers=auth,
+    )
+    assert res.status_code == 400
+    assert "标题过长" in res.json()["detail"]
+    # the rejected bookmark was not saved (and not silently truncated)
+    res = client.get("/api/bookmarks", params={"q": "title513"}, headers=auth)
+    assert res.json()["total"] == 0
+
+
+def test_title_length_boundary_update(client, auth):
+    res = client.post(
+        "/api/bookmarks",
+        json={"url": "https://example.com/title-upd", "title": "短标题"},
+        headers=auth,
+    )
+    bm_id = res.json()["id"]
+    res = client.put(
+        f"/api/bookmarks/{bm_id}", json={"title": "更" * 512}, headers=auth
+    )
+    assert res.status_code == 200 and res.json()["title"] == "更" * 512
+    res = client.put(
+        f"/api/bookmarks/{bm_id}", json={"title": "更" * 513}, headers=auth
+    )
+    assert res.status_code == 400
+    assert "标题过长" in res.json()["detail"]
+    # stored title is unchanged after the rejection
+    res = client.get(f"/api/bookmarks/{bm_id}", headers=auth)
+    assert res.json()["title"] == "更" * 512
+
+
+def test_scraped_title_too_long_rejected(client, auth, monkeypatch):
+    monkeypatch.setattr(
+        appmod, "fetch_metadata",
+        lambda url: {"url": url, "title": "抓" * 513, "description": "d"},
+    )
+    res = client.post(
+        "/api/bookmarks", json={"url": "https://example.com/scrape-long"}, headers=auth
+    )
+    assert res.status_code == 400
+    assert "标题过长" in res.json()["detail"]
+
+
+def test_fetch_metadata_route_rejects_long_title(client, auth, monkeypatch):
+    monkeypatch.setattr(
+        appmod, "fetch_metadata",
+        lambda url: {"url": url, "title": "抓" * 513, "description": None},
+    )
+    res = client.post(
+        "/api/fetch-metadata", json={"url": "https://example.com/long"}, headers=auth
+    )
+    assert res.status_code == 400
+    assert "标题过长" in res.json()["detail"]
+
+
+def test_import_overlong_title_counts_failed(client, auth):
+    long_title = "长" * 513
+    html = (
+        "<!DOCTYPE NETSCAPE-Bookmark-file-1><DL><p>"
+        f'<DT><A HREF="https://example.com/imp-long" ADD_DATE="1700000000">{long_title}</A>'
+        '<DT><A HREF="https://example.com/imp-ok" ADD_DATE="1700000001">正常标题</A>'
+        "</DL><p>"
+    )
+    res = client.post(
+        "/api/import",
+        files={"file": ("t.html", html.encode("utf-8"), "text/html")},
+        headers=auth,
+    )
+    result = res.json()
+    assert result["success"] == 1 and result["failed"] == 1, result
+    res = client.get("/api/bookmarks", params={"q": "imp-ok"}, headers=auth)
+    assert res.json()["total"] == 1
+    res = client.get("/api/bookmarks", params={"q": "imp-long"}, headers=auth)
+    assert res.json()["total"] == 0

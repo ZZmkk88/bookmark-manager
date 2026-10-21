@@ -136,6 +136,16 @@ def validate_url(url: str) -> str:
     return url
 
 
+def validate_title_length(title: str) -> None:
+    """Overlong titles are rejected with a clear error instead of being
+    silently truncated (user decision 2026-10-21, see DECISIONS.md)."""
+    if len(title) > MAX_TITLE_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"标题过长：最多 {MAX_TITLE_LENGTH} 个字符，当前 {len(title)} 个，请缩短后再保存",
+        )
+
+
 # ---------------------------------------------------------------------------
 # database
 # ---------------------------------------------------------------------------
@@ -417,7 +427,10 @@ class FetchIn(BaseModel):
 @app.post("/api/fetch-metadata")
 def fetch_metadata_api(body: FetchIn, user: sqlite3.Row = Depends(current_user)):
     url = validate_url(body.url)
-    return fetch_metadata(url)
+    meta = fetch_metadata(url)
+    if meta.get("title"):
+        validate_title_length(meta["title"])
+    return meta
 
 
 # ---------------------------------------------------------------------------
@@ -498,7 +511,7 @@ def create_bookmark(body: BookmarkIn, user: sqlite3.Row = Depends(current_user))
         title = (meta.get("title") or "").strip()
         if not description:
             description = (meta.get("description") or "").strip()
-    title = title[:MAX_TITLE_LENGTH]
+    validate_title_length(title)
     tag_names, dropped_tags = parse_tag_string(body.tags or "")
     now = iso(utcnow())
     conn = get_db()
@@ -603,13 +616,15 @@ def update_bookmark(bookmark_id: int, body: BookmarkUpdateIn, user: sqlite3.Row 
             ).fetchone()
             if clash:
                 raise HTTPException(status_code=409, detail="这个网址已经收藏过了")
+        new_title = body.title if body.title is not None else row["title"]
+        validate_title_length(new_title)
         conn.execute(
             "UPDATE bookmarks SET url = ?, url_normalized = ?, title = ?, description = ?,"
             " notes = ?, unread = ?, is_archived = ?, date_modified = ? WHERE id = ?",
             (
                 url,
                 normalized,
-                (body.title if body.title is not None else row["title"])[:MAX_TITLE_LENGTH],
+                new_title,
                 body.description if body.description is not None else row["description"],
                 body.notes if body.notes is not None else row["notes"],
                 (1 if body.unread else 0) if body.unread is not None else row["unread"],
@@ -771,6 +786,10 @@ def import_netscape(html_text: str, user_id: int) -> dict:
                     result["skipped"] += 1
                     continue
                 seen_in_file.add(normalized)
+                if len(item["title"]) > MAX_TITLE_LENGTH:
+                    # overlong titles are refused, never silently truncated
+                    result["failed"] += 1
+                    continue
                 now = iso(utcnow())
                 date_added = _epoch_to_iso(item["add_date"]) or now
                 date_modified = _epoch_to_iso(item["last_modified"]) or date_added
@@ -783,7 +802,7 @@ def import_netscape(html_text: str, user_id: int) -> dict:
                     conn.execute(
                         "UPDATE bookmarks SET url = ?, title = ?, description = ?, notes = ?,"
                         " unread = ?, is_archived = ?, date_added = ?, date_modified = ? WHERE id = ?",
-                        (href, item["title"][:MAX_TITLE_LENGTH], item["description"], item["notes"],
+                        (href, item["title"], item["description"], item["notes"],
                          1 if item["unread"] else 0, 1 if item["is_archived"] else 0,
                          date_added, date_modified, bookmark_id),
                     )
@@ -792,7 +811,7 @@ def import_netscape(html_text: str, user_id: int) -> dict:
                         "INSERT INTO bookmarks (user_id, url, url_normalized, title, description,"
                         " notes, unread, is_archived, date_added, date_modified)"
                         " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (user_id, href, normalized, item["title"][:MAX_TITLE_LENGTH],
+                        (user_id, href, normalized, item["title"],
                          item["description"], item["notes"], 1 if item["unread"] else 0,
                          1 if item["is_archived"] else 0, date_added, date_modified),
                     )
